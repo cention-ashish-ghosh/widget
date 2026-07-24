@@ -1,14 +1,1192 @@
-<script type="text/javascript"> 
-var CentionBaseURL = "https://cloud-qa.cention.com/s/tobias"; 
-var CloudFrontURL = "https://static-qa.cention.com"; 
-</script>
-<div id="cention-video-container"></div>
-<script src="https://static-qa.cention.com/chat/js/widget-extended.js" type="text/javascript"></script>
-<div id="cention-chat-container"></div>
-<script type="text/javascript">
-if (typeof CentionChat !== "undefined") {
-  CentionChat("cention-chat-container", {
-    widgetId: "8b4b7a5d-5568-4b12-ba19-1fde0ae5f2b0",
-  });
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  Cention Webchat — external-site test page (fully self-contained).
+
+  Host this single file ANYWHERE (any web server, S3 static site, or just
+  open it from disk over file://) and it will connect a website visitor to a
+  Cention agent through the deployed dev environment:
+
+    WebSocket : wss://v2-api.cention.com/channel-adapter-chat/v1/ws/01KY78N19ZHSTVC23D30BH7HF8
+    Widget    : 01KY78N19ZHSTVC23D30BH7HF8  (tenant "cention", area "Kundigen-Support")
+
+  The widget JS + CSS are inlined below, so nothing needs to be served from
+  the Cention cluster. Once the channel-adapter-chat image ships its static/
+  directory (Dockerfile fix), a real customer site only needs the 3-line
+  embed snippet instead:
+
+    <script src="https://v2-api.cention.com/channel-adapter-chat/static/cention-chat.js"
+      data-widget-id="01KY78N19ZHSTVC23D30BH7HF8"
+      data-server="wss://v2-api.cention.com/channel-adapter-chat"
+      data-api-base="https://v2-api.cention.com/channel-adapter-chat"><\/script>
+
+  To see the agent side: log into the agent UI as an agent for tenant
+  "cention" — the visitor chat arrives as a queued case in area
+  Kundigen-Support; replies flow back onto this page over the WebSocket.
+-->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Acme Demo Store — Cention webchat test</title>
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; color: #1e293b; }
+  header { background: #0f172a; color: #fff; padding: 20px 32px; }
+  header h1 { margin: 0; font-size: 20px; }
+  main { max-width: 720px; margin: 40px auto; padding: 0 24px; line-height: 1.6; }
+  .note { background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 8px;
+          padding: 12px 16px; font-size: 14px; }
+</style>
+<style id="cc-styles">
+/* Cention Chat Widget — self-contained CSS */
+:root {
+  --cc-primary: #0066cc;
+  --cc-primary-dark: #004d99;
+  --cc-bg: #ffffff;
+  --cc-bg-secondary: #f5f7fa;
+  --cc-text: #1a1a2e;
+  --cc-text-muted: #6b7280;
+  --cc-border: #e5e7eb;
+  --cc-visitor-bg: #0066cc;
+  --cc-visitor-text: #ffffff;
+  --cc-agent-bg: #f0f2f5;
+  --cc-agent-text: #1a1a2e;
+  --cc-bot-bg: #e8f4fd;
+  --cc-bot-text: #1a1a2e;
+  --cc-system-text: #6b7280;
+  --cc-radius: 12px;
+  --cc-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+  --cc-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
+
+/* Reset */
+.cc-widget * { box-sizing: border-box; margin: 0; padding: 0; }
+
+/* Launcher button */
+.cc-launcher {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--cc-primary);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  box-shadow: var(--cc-shadow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  transition: transform 0.2s, background 0.2s;
+}
+.cc-launcher:hover { transform: scale(1.08); background: var(--cc-primary-dark); }
+.cc-launcher svg { width: 28px; height: 28px; }
+.cc-launcher--hidden { display: none; }
+
+/* Chat window */
+.cc-window {
+  position: fixed;
+  bottom: 90px;
+  right: 20px;
+  width: 380px;
+  max-width: calc(100vw - 24px);
+  height: 560px;
+  max-height: calc(100vh - 120px);
+  background: var(--cc-bg);
+  border-radius: var(--cc-radius);
+  box-shadow: var(--cc-shadow);
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 9999;
+  font-family: var(--cc-font);
+  font-size: 14px;
+  color: var(--cc-text);
+}
+.cc-window--open { display: flex; }
+
+/* Header */
+.cc-header {
+  background: var(--cc-primary);
+  color: #fff;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.cc-header__title { font-size: 16px; font-weight: 600; }
+.cc-header__status { font-size: 12px; opacity: 0.85; margin-top: 2px; }
+.cc-header__actions { display: flex; align-items: center; gap: 8px; }
+.cc-header__close {
+  background: none;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  opacity: 0.8;
+  padding: 4px;
+}
+.cc-header__close:hover { opacity: 1; }
+.cc-header__video-btn {
+  background: none;
+  border: 1.5px solid rgba(255,255,255,0.5);
+  color: #fff;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.85;
+  transition: all 0.2s;
+}
+.cc-header__video-btn:hover { opacity: 1; border-color: #fff; }
+.cc-header__video-btn svg { width: 16px; height: 16px; }
+.cc-header__video-btn--active { background: rgba(255,255,255,0.2); border-color: #fff; animation: cc-pulse 1.5s infinite; }
+@keyframes cc-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255,255,255,0.3); } 50% { box-shadow: 0 0 0 6px rgba(255,255,255,0); } }
+
+/* Pre-chat form */
+.cc-prechat {
+  flex: 1;
+  padding: 24px 20px;
+  overflow-y: auto;
+}
+.cc-prechat__title { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+.cc-prechat__field { margin-bottom: 14px; }
+.cc-prechat__label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 4px;
+  color: var(--cc-text);
+}
+.cc-prechat__label--required::after { content: " *"; color: #dc2626; }
+.cc-prechat__input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--cc-border);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: var(--cc-font);
+  outline: none;
+  transition: border-color 0.2s;
+}
+.cc-prechat__input:focus { border-color: var(--cc-primary); }
+.cc-prechat__submit {
+  width: 100%;
+  padding: 12px;
+  background: var(--cc-primary);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: background 0.2s;
+}
+.cc-prechat__submit:hover { background: var(--cc-primary-dark); }
+
+/* Messages area */
+.cc-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--cc-bg-secondary);
+}
+.cc-messages::-webkit-scrollbar { width: 6px; }
+.cc-messages::-webkit-scrollbar-thumb { background: #c4c4c4; border-radius: 3px; }
+
+/* Message bubbles */
+.cc-msg { max-width: 80%; padding: 10px 14px; border-radius: 16px; line-height: 1.45; word-wrap: break-word; }
+.cc-msg--visitor { background: var(--cc-visitor-bg); color: var(--cc-visitor-text); align-self: flex-end; border-bottom-right-radius: 4px; }
+.cc-msg--agent { background: var(--cc-agent-bg); color: var(--cc-agent-text); align-self: flex-start; border-bottom-left-radius: 4px; }
+.cc-msg--bot { background: var(--cc-bot-bg); color: var(--cc-bot-text); align-self: flex-start; border-bottom-left-radius: 4px; }
+.cc-msg--system { background: none; color: var(--cc-system-text); align-self: center; font-size: 12px; font-style: italic; text-align: center; padding: 6px 12px; }
+
+.cc-msg__sender { font-size: 11px; font-weight: 600; color: var(--cc-text-muted); margin-bottom: 2px; }
+.cc-msg__time { font-size: 10px; color: var(--cc-text-muted); margin-top: 4px; text-align: right; }
+
+/* Typing indicator */
+.cc-typing { display: flex; align-items: center; gap: 4px; padding: 8px 14px; align-self: flex-start; }
+.cc-typing__dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--cc-text-muted);
+  animation: cc-bounce 1.4s infinite ease-in-out;
+}
+.cc-typing__dot:nth-child(1) { animation-delay: 0s; }
+.cc-typing__dot:nth-child(2) { animation-delay: 0.2s; }
+.cc-typing__dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes cc-bounce { 0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; } 40% { transform: scale(1); opacity: 1; } }
+
+/* Input area */
+.cc-input {
+  border-top: 1px solid var(--cc-border);
+  padding: 12px 16px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  background: var(--cc-bg);
+  flex-shrink: 0;
+}
+.cc-input__textarea {
+  flex: 1;
+  border: 1px solid var(--cc-border);
+  border-radius: 20px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-family: var(--cc-font);
+  resize: none;
+  max-height: 100px;
+  outline: none;
+  line-height: 1.4;
+  overflow-y: auto;
+}
+.cc-input__textarea:focus { border-color: var(--cc-primary); }
+.cc-input__send {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--cc-primary);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+.cc-input__send:hover { background: var(--cc-primary-dark); }
+.cc-input__send:disabled { opacity: 0.5; cursor: not-allowed; }
+.cc-input__send svg { width: 18px; height: 18px; }
+
+/* Video chat */
+.cc-video-container {
+  position: relative;
+  background: #000;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 220px;
+  overflow: hidden;
+}
+.cc-video__remote {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #1a1a2e;
+}
+.cc-video__local {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  width: 90px;
+  height: 68px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  z-index: 2;
+  background: #333;
+}
+.cc-video__controls {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+  z-index: 3;
+}
+.cc-video__btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+}
+.cc-video__btn svg { width: 18px; height: 18px; }
+.cc-video__btn--mute { background: rgba(255,255,255,0.2); }
+.cc-video__btn--mute:hover { background: rgba(255,255,255,0.35); }
+.cc-video__btn--muted { background: #dc2626; }
+.cc-video__btn--camera { background: rgba(255,255,255,0.2); }
+.cc-video__btn--camera:hover { background: rgba(255,255,255,0.35); }
+.cc-video__btn--off { background: #dc2626; }
+.cc-video__btn--end { background: #dc2626; }
+.cc-video__btn--end:hover { background: #b91c1c; }
+
+/* Incoming call overlay */
+.cc-video__incoming {
+  position: absolute;
+  inset: 0;
+  background: rgba(26, 26, 46, 0.92);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  z-index: 5;
+}
+.cc-video__incoming-text {
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  animation: cc-pulse-text 2s infinite;
+}
+@keyframes cc-pulse-text { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+.cc-video__incoming-actions { display: flex; gap: 16px; }
+.cc-video__btn--accept {
+  background: #16a34a;
+  border-radius: 24px;
+  padding: 10px 24px;
+  width: auto;
+  height: auto;
+}
+.cc-video__btn--accept:hover { background: #15803d; }
+.cc-video__btn--reject {
+  background: #dc2626;
+  border-radius: 24px;
+  padding: 10px 24px;
+  width: auto;
+  height: auto;
+}
+.cc-video__btn--reject:hover { background: #b91c1c; }
+
+/* Queue banner */
+.cc-queue-banner {
+  background: #fef3cd;
+  color: #856404;
+  padding: 8px 16px;
+  font-size: 13px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* CSAT survey */
+.cc-csat {
+  padding: 24px 20px;
+  text-align: center;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.cc-csat__prompt { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+.cc-csat__stars { display: flex; gap: 8px; margin-bottom: 20px; }
+.cc-csat__star {
+  font-size: 32px;
+  cursor: pointer;
+  color: var(--cc-border);
+  transition: color 0.15s;
+  background: none;
+  border: none;
+}
+.cc-csat__star--active, .cc-csat__star:hover { color: #f59e0b; }
+.cc-csat__thanks { font-size: 14px; color: var(--cc-text-muted); margin-top: 12px; }
+
+/* Mobile fullscreen */
+@media (max-width: 480px) {
+  .cc-window--fullscreen {
+    width: 100vw;
+    height: 100vh;
+    max-height: 100vh;
+    bottom: 0;
+    right: 0;
+    border-radius: 0;
+  }
+  .cc-launcher { bottom: 12px; right: 12px; width: 54px; height: 54px; }
+}
+
+</style>
+</head>
+<body>
+<header><h1>Acme Demo Store</h1></header>
+<main>
+  <h2>This is an external website</h2>
+  <p>It has nothing Cention-specific except the chat widget in the corner.</p>
+  <p class="note">Click the chat bubble (bottom-right), send a message, then
+  log into the Cention agent UI (tenant <b>cention</b>, area
+  <b>Kundigen-Support</b>) to pick up the conversation and reply.</p>
+</main>
+
+<script>
+/**
+ * Cention Chat Widget — self-contained WebSocket chat client with WebRTC video.
+ *
+ * Usage:
+ *   <script src="/static/cention-chat.js"
+ *     data-widget-id="<widget_id>"
+ *     data-server="wss://chat.example.com">
+ *   <\/script>
+ *
+ * Or:
+ *   CentionChat.init({ widgetId: "...", server: "wss://..." });
+ */
+(function () {
+  "use strict";
+
+  const CentionChat = {
+    _ws: null,
+    _config: null,
+    _sessionId: null,
+    _state: "idle", // idle | prechat | chatting | csat | closed
+    _elements: {},
+    _typingTimeout: null,
+
+    // Video / WebRTC state
+    _videoConfig: null,
+    _peerConnection: null,
+    _localStream: null,
+    _remoteStream: null,
+    _videoState: "idle", // idle | requesting | ringing | active
+
+    init(opts = {}) {
+      const script = document.currentScript || document.querySelector("script[data-widget-id]");
+      this._config = {
+        widgetId: opts.widgetId || (script && script.dataset.widgetId) || "",
+        server: opts.server || (script && script.dataset.server) || `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}`,
+        apiBase: opts.apiBase || (script && script.dataset.apiBase) || `${location.protocol}//${location.host}`,
+      };
+
+      if (!this._config.widgetId) {
+        console.error("[CentionChat] Missing widget ID");
+        return;
+      }
+
+      this._injectCSS();
+      this._buildUI();
+      this._loadWidgetConfig();
+    },
+
+    _injectCSS() {
+      if (document.getElementById("cc-styles")) return;
+      const link = document.createElement("link");
+      link.id = "cc-styles";
+      link.rel = "stylesheet";
+      link.href = `${this._config.apiBase}/static/cention-chat.css`;
+      document.head.appendChild(link);
+    },
+
+    _buildUI() {
+      const root = document.createElement("div");
+      root.className = "cc-widget";
+      root.innerHTML = `
+        <button class="cc-launcher" id="cc-launcher">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+        </button>
+        <div class="cc-window" id="cc-window">
+          <div class="cc-header">
+            <div>
+              <div class="cc-header__title" id="cc-title">Chat with us</div>
+              <div class="cc-header__status" id="cc-status"></div>
+            </div>
+            <div class="cc-header__actions">
+              <button class="cc-header__video-btn" id="cc-video-btn" style="display:none" title="Start video call">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                </svg>
+              </button>
+              <button class="cc-header__close" id="cc-close">&times;</button>
+            </div>
+          </div>
+          <div class="cc-video-container" id="cc-video-container" style="display:none">
+            <video id="cc-remote-video" class="cc-video__remote" autoplay playsinline></video>
+            <video id="cc-local-video" class="cc-video__local" autoplay playsinline muted></video>
+            <div class="cc-video__controls" id="cc-video-controls">
+              <button class="cc-video__btn cc-video__btn--mute" id="cc-video-mute" title="Mute">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg>
+              </button>
+              <button class="cc-video__btn cc-video__btn--camera" id="cc-video-camera" title="Toggle camera">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+              </button>
+              <button class="cc-video__btn cc-video__btn--end" id="cc-video-end" title="End call">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 2.59 3.4z"/></svg>
+              </button>
+            </div>
+            <div class="cc-video__incoming" id="cc-video-incoming" style="display:none">
+              <div class="cc-video__incoming-text">Incoming video call</div>
+              <div class="cc-video__incoming-actions">
+                <button class="cc-video__btn cc-video__btn--accept" id="cc-video-accept">Accept</button>
+                <button class="cc-video__btn cc-video__btn--reject" id="cc-video-reject">Decline</button>
+              </div>
+            </div>
+          </div>
+          <div class="cc-queue-banner" id="cc-queue" style="display:none"></div>
+          <div class="cc-prechat" id="cc-prechat" style="display:none"></div>
+          <div class="cc-messages" id="cc-messages"></div>
+          <div class="cc-csat" id="cc-csat" style="display:none">
+            <div class="cc-csat__prompt" id="cc-csat-prompt">How was your experience?</div>
+            <div class="cc-csat__stars" id="cc-csat-stars"></div>
+            <div class="cc-csat__thanks" id="cc-csat-thanks" style="display:none">Thank you for your feedback!</div>
+          </div>
+          <div class="cc-input" id="cc-input">
+            <textarea class="cc-input__textarea" id="cc-textarea" rows="1" placeholder="Type a message..."></textarea>
+            <button class="cc-input__send" id="cc-send">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+            </button>
+          </div>
+        </div>`;
+      document.body.appendChild(root);
+
+      // Cache elements
+      ["launcher", "window", "close", "title", "status", "queue",
+       "prechat", "messages", "csat", "csat-prompt", "csat-stars", "csat-thanks",
+       "input", "textarea", "send",
+       "video-btn", "video-container", "remote-video", "local-video",
+       "video-controls", "video-mute", "video-camera", "video-end",
+       "video-incoming", "video-accept", "video-reject"
+      ].forEach(id => { this._elements[id] = document.getElementById(`cc-${id}`); });
+
+      // Chat events
+      this._elements.launcher.addEventListener("click", () => this._toggle());
+      this._elements.close.addEventListener("click", () => this._toggle());
+      this._elements.send.addEventListener("click", () => this._sendMessage());
+      this._elements.textarea.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); this._sendMessage(); }
+      });
+      this._elements.textarea.addEventListener("input", () => this._handleTyping());
+
+      // Auto-resize textarea
+      this._elements.textarea.addEventListener("input", function () {
+        this.style.height = "auto";
+        this.style.height = Math.min(this.scrollHeight, 100) + "px";
+      });
+
+      // Video events
+      this._elements["video-btn"].addEventListener("click", () => this._requestVideoCall());
+      this._elements["video-end"].addEventListener("click", () => this._endVideoCall());
+      this._elements["video-mute"].addEventListener("click", () => this._toggleMute());
+      this._elements["video-camera"].addEventListener("click", () => this._toggleCamera());
+      this._elements["video-accept"].addEventListener("click", () => this._acceptVideoCall());
+      this._elements["video-reject"].addEventListener("click", () => this._rejectVideoCall());
+    },
+
+    async _loadWidgetConfig() {
+      try {
+        const res = await fetch(`${this._config.apiBase}/v1/widgets/${this._config.widgetId}/config`);
+        if (!res.ok) return;
+        const cfg = await res.json();
+        this._widgetConfig = cfg;
+
+        // Apply theming
+        if (cfg.primary_color) {
+          document.documentElement.style.setProperty("--cc-primary", cfg.primary_color);
+        }
+        if (cfg.header_title) this._elements.title.textContent = cfg.header_title;
+        if (cfg.csat_prompt) this._elements["csat-prompt"].textContent = cfg.csat_prompt;
+
+        // Position
+        const launcher = this._elements.launcher;
+        const win = this._elements.window;
+        if (cfg.position === "bottom-left") {
+          launcher.style.left = (cfg.left_offset || 20) + "px";
+          launcher.style.right = "auto";
+          win.style.left = (cfg.left_offset || 20) + "px";
+          win.style.right = "auto";
+        }
+
+        if (!cfg.show_after_load) launcher.classList.add("cc-launcher--hidden");
+      } catch (e) {
+        console.warn("[CentionChat] Could not load widget config:", e);
+      }
+    },
+
+    _toggle() {
+      const win = this._elements.window;
+      const isOpen = win.classList.toggle("cc-window--open");
+
+      if (isOpen && this._state === "idle") {
+        this._startSession();
+      }
+    },
+
+    _startSession() {
+      const cfg = this._widgetConfig || {};
+      const needsPrechat = (cfg.name_required || cfg.email_required);
+
+      if (needsPrechat) {
+        this._showPrechat(cfg);
+      } else {
+        this._connect();
+      }
+    },
+
+    _showPrechat(cfg) {
+      this._state = "prechat";
+      this._elements.prechat.style.display = "block";
+      this._elements.messages.style.display = "none";
+      this._elements.input.style.display = "none";
+
+      let html = '<div class="cc-prechat__title">Start a conversation</div>';
+      const fields = [];
+
+      if (cfg.show_name_field !== false) {
+        const req = cfg.name_required ? " cc-prechat__label--required" : "";
+        html += `<div class="cc-prechat__field"><label class="cc-prechat__label${req}">Name</label><input class="cc-prechat__input" id="cc-f-name" type="text"></div>`;
+        fields.push("name");
+      }
+      if (cfg.show_email_field !== false) {
+        const req = cfg.email_required ? " cc-prechat__label--required" : "";
+        html += `<div class="cc-prechat__field"><label class="cc-prechat__label${req}">Email</label><input class="cc-prechat__input" id="cc-f-email" type="email"></div>`;
+        fields.push("email");
+      }
+      if (cfg.show_phone_field) {
+        const req = cfg.phone_required ? " cc-prechat__label--required" : "";
+        html += `<div class="cc-prechat__field"><label class="cc-prechat__label${req}">Phone</label><input class="cc-prechat__input" id="cc-f-phone" type="tel"></div>`;
+        fields.push("phone");
+      }
+      if (cfg.show_question_field !== false) {
+        html += `<div class="cc-prechat__field"><label class="cc-prechat__label">Question</label><textarea class="cc-prechat__input" id="cc-f-question" rows="3"></textarea></div>`;
+        fields.push("question");
+      }
+
+      html += `<button class="cc-prechat__submit" id="cc-prechat-submit">Start Chat</button>`;
+      this._elements.prechat.innerHTML = html;
+
+      document.getElementById("cc-prechat-submit").addEventListener("click", () => {
+        this._prechatData = {};
+        if (fields.includes("name")) this._prechatData.visitor_name = (document.getElementById("cc-f-name").value || "").trim();
+        if (fields.includes("email")) this._prechatData.visitor_email = (document.getElementById("cc-f-email").value || "").trim();
+        if (fields.includes("phone")) this._prechatData.visitor_phone = (document.getElementById("cc-f-phone").value || "").trim();
+        if (fields.includes("question")) this._prechatData.question = (document.getElementById("cc-f-question").value || "").trim();
+
+        // Validate required
+        if (cfg.name_required && !this._prechatData.visitor_name) return;
+        if (cfg.email_required && !this._prechatData.visitor_email) return;
+
+        this._elements.prechat.style.display = "none";
+        this._connect();
+      });
+    },
+
+    _connect() {
+      this._state = "chatting";
+      this._elements.messages.style.display = "flex";
+      this._elements.input.style.display = "flex";
+      this._elements.status.textContent = "Connecting...";
+
+      const params = new URLSearchParams();
+      if (this._prechatData) {
+        if (this._prechatData.visitor_name) params.set("visitor_name", this._prechatData.visitor_name);
+        if (this._prechatData.visitor_email) params.set("visitor_email", this._prechatData.visitor_email);
+        if (this._prechatData.visitor_phone) params.set("visitor_phone", this._prechatData.visitor_phone);
+      }
+      if (this._sessionId) params.set("session_id", this._sessionId);
+
+      const url = `${this._config.server}/v1/ws/${this._config.widgetId}?${params.toString()}`;
+      this._ws = new WebSocket(url);
+
+      this._ws.onopen = () => {
+        this._elements.status.textContent = "Connected";
+
+        if (this._prechatData) {
+          this._ws.send(JSON.stringify({
+            type: "prechat_form",
+            payload: this._prechatData,
+          }));
+
+          if (this._prechatData.question) {
+            setTimeout(() => {
+              this._ws.send(JSON.stringify({
+                type: "chat_message",
+                payload: { text: this._prechatData.question },
+              }));
+              this._appendMessage("visitor", this._prechatData.question);
+            }, 300);
+          }
+        }
+      };
+
+      this._ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        this._handleServerMessage(msg);
+      };
+
+      this._ws.onclose = () => {
+        this._elements.status.textContent = "Disconnected";
+        this._endVideoCall(true);
+      };
+
+      this._ws.onerror = () => {
+        this._elements.status.textContent = "Connection error";
+      };
+    },
+
+    _handleServerMessage(msg) {
+      switch (msg.type) {
+        case "session_created":
+          this._sessionId = msg.payload.session_id;
+          if (msg.payload.bot_active) {
+            this._elements.status.textContent = "Chatting with bot";
+          }
+          // Store video config from server
+          if (msg.payload.video) {
+            this._videoConfig = msg.payload.video;
+            if (this._videoConfig.enabled) {
+              this._elements["video-btn"].style.display = "flex";
+            }
+          }
+          break;
+
+        case "prechat_required":
+          if (this._state !== "prechat") {
+            this._showPrechat(msg.payload);
+          }
+          break;
+
+        case "chat_message": {
+          const p = msg.payload;
+          const sender = p.sender || "agent";
+          const name = p.bot_name || p.agent_name || (sender === "bot" ? "Bot" : "Agent");
+          this._appendMessage(sender, p.body_text || p.text || "", name);
+          this._removeTypingIndicator();
+          break;
+        }
+
+        case "agent_joined":
+          this._appendSystem(`${msg.payload.agent_name || "An agent"} has joined the chat.`);
+          this._elements.status.textContent = "Chatting with agent";
+          // Show video button once agent is connected
+          if (this._videoConfig && this._videoConfig.enabled) {
+            this._elements["video-btn"].style.display = "flex";
+          }
+          break;
+
+        case "system":
+          this._appendSystem(msg.payload.message || "");
+          break;
+
+        case "typing": {
+          const p = msg.payload;
+          if (p.is_typing) this._showTypingIndicator(p.sender);
+          else this._removeTypingIndicator();
+          break;
+        }
+
+        case "queue_update":
+          this._elements.queue.style.display = "block";
+          this._elements.queue.textContent = `You are #${msg.payload.position} in queue`;
+          this._elements.status.textContent = "In queue";
+          break;
+
+        case "session_closed":
+          this._elements.status.textContent = "Chat ended";
+          this._endVideoCall(true);
+          this._showCsat();
+          break;
+
+        // ── Video signalling ──
+
+        case "video_request":
+          // Agent or visitor is requesting a video call
+          this._showIncomingCall();
+          break;
+
+        case "video_accepted":
+          // Our video request was accepted — start the WebRTC offer
+          this._videoState = "active";
+          this._startWebRTC(true);
+          break;
+
+        case "video_rejected":
+          this._videoState = "idle";
+          this._hideVideoUI();
+          this._appendSystem("Video call was declined.");
+          break;
+
+        case "video_offer":
+          this._handleVideoOffer(msg.payload);
+          break;
+
+        case "video_answer":
+          this._handleVideoAnswer(msg.payload);
+          break;
+
+        case "video_ice_candidate":
+          this._handleRemoteIceCandidate(msg.payload);
+          break;
+
+        case "video_end":
+          this._endVideoCall(true);
+          this._appendSystem("Video call ended.");
+          break;
+
+        case "video_error":
+          this._videoState = "idle";
+          this._hideVideoUI();
+          this._appendSystem(msg.payload.error || "Video call error.");
+          break;
+
+        case "visitor_disconnected":
+          break;
+      }
+    },
+
+    // ── Chat messaging ──
+
+    _sendMessage() {
+      const textarea = this._elements.textarea;
+      const text = textarea.value.trim();
+      if (!text || !this._ws || this._ws.readyState !== WebSocket.OPEN) return;
+
+      this._ws.send(JSON.stringify({ type: "chat_message", payload: { text } }));
+      this._appendMessage("visitor", text);
+      textarea.value = "";
+      textarea.style.height = "auto";
+    },
+
+    _handleTyping() {
+      if (!this._ws || this._ws.readyState !== WebSocket.OPEN) return;
+      if (!this._typingTimeout) {
+        this._ws.send(JSON.stringify({ type: "typing", payload: { is_typing: true } }));
+      }
+      clearTimeout(this._typingTimeout);
+      this._typingTimeout = setTimeout(() => {
+        this._ws.send(JSON.stringify({ type: "typing", payload: { is_typing: false } }));
+        this._typingTimeout = null;
+      }, 2000);
+    },
+
+    _appendMessage(sender, text, name) {
+      if (!text) return;
+      const el = document.createElement("div");
+      const cls = sender === "visitor" ? "cc-msg--visitor" : sender === "bot" ? "cc-msg--bot" : "cc-msg--agent";
+      el.className = `cc-msg ${cls}`;
+
+      let html = "";
+      if (sender !== "visitor" && name) {
+        html += `<div class="cc-msg__sender">${this._esc(name)}</div>`;
+      }
+      html += this._esc(text);
+      html += `<div class="cc-msg__time">${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>`;
+      el.innerHTML = html;
+
+      this._elements.messages.appendChild(el);
+      this._elements.messages.scrollTop = this._elements.messages.scrollHeight;
+    },
+
+    _appendSystem(text) {
+      const el = document.createElement("div");
+      el.className = "cc-msg cc-msg--system";
+      el.textContent = text;
+      this._elements.messages.appendChild(el);
+      this._elements.messages.scrollTop = this._elements.messages.scrollHeight;
+    },
+
+    _showTypingIndicator(sender) {
+      if (document.getElementById("cc-typing")) return;
+      const el = document.createElement("div");
+      el.id = "cc-typing";
+      el.className = "cc-typing";
+      el.innerHTML = '<div class="cc-typing__dot"></div><div class="cc-typing__dot"></div><div class="cc-typing__dot"></div>';
+      this._elements.messages.appendChild(el);
+      this._elements.messages.scrollTop = this._elements.messages.scrollHeight;
+    },
+
+    _removeTypingIndicator() {
+      const el = document.getElementById("cc-typing");
+      if (el) el.remove();
+    },
+
+    // ── CSAT ──
+
+    _showCsat() {
+      this._state = "csat";
+      this._elements.input.style.display = "none";
+      this._elements.csat.style.display = "flex";
+      this._elements.queue.style.display = "none";
+      this._elements["video-btn"].style.display = "none";
+
+      const stars = this._elements["csat-stars"];
+      stars.innerHTML = "";
+      for (let i = 1; i <= 5; i++) {
+        const btn = document.createElement("button");
+        btn.className = "cc-csat__star";
+        btn.textContent = "\u2605";
+        btn.addEventListener("click", () => this._submitCsat(i));
+        btn.addEventListener("mouseenter", () => {
+          stars.querySelectorAll(".cc-csat__star").forEach((s, idx) => {
+            s.classList.toggle("cc-csat__star--active", idx < i);
+          });
+        });
+        stars.appendChild(btn);
+      }
+    },
+
+    _submitCsat(score) {
+      if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+        this._ws.send(JSON.stringify({ type: "csat", payload: { score } }));
+      }
+      this._elements["csat-stars"].style.display = "none";
+      this._elements["csat-thanks"].style.display = "block";
+      this._state = "closed";
+    },
+
+    // ── Video / WebRTC ──
+
+    _requestVideoCall() {
+      if (!this._ws || this._ws.readyState !== WebSocket.OPEN) return;
+      if (this._videoState !== "idle") return;
+
+      this._videoState = "requesting";
+      this._ws.send(JSON.stringify({ type: "video_request", payload: {} }));
+      this._appendSystem("Requesting video call...");
+      this._elements["video-btn"].classList.add("cc-header__video-btn--active");
+    },
+
+    _showIncomingCall() {
+      this._videoState = "ringing";
+      this._elements["video-container"].style.display = "flex";
+      this._elements["video-incoming"].style.display = "flex";
+      this._elements["video-controls"].style.display = "none";
+    },
+
+    async _acceptVideoCall() {
+      this._elements["video-incoming"].style.display = "none";
+      this._videoState = "active";
+
+      // Tell server we accepted
+      if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+        this._ws.send(JSON.stringify({ type: "video_accept", payload: {} }));
+      }
+
+      // Start WebRTC as answerer (we'll wait for an offer)
+      await this._startWebRTC(false);
+    },
+
+    _rejectVideoCall() {
+      this._videoState = "idle";
+      this._hideVideoUI();
+      if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+        this._ws.send(JSON.stringify({ type: "video_reject", payload: {} }));
+      }
+    },
+
+    async _startWebRTC(isOfferer) {
+      try {
+        // Get local media
+        this._localStream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: true,
+        });
+
+        this._elements["local-video"].srcObject = this._localStream;
+
+        // Show video UI
+        this._elements["video-container"].style.display = "flex";
+        this._elements["video-controls"].style.display = "flex";
+        this._elements["video-incoming"].style.display = "none";
+
+        // Create RTCPeerConnection
+        const iceServers = (this._videoConfig && this._videoConfig.ice_servers) || [];
+        this._peerConnection = new RTCPeerConnection({ iceServers });
+
+        // Add local tracks
+        this._localStream.getTracks().forEach(track => {
+          this._peerConnection.addTrack(track, this._localStream);
+        });
+
+        // Handle remote tracks
+        this._remoteStream = new MediaStream();
+        this._elements["remote-video"].srcObject = this._remoteStream;
+
+        this._peerConnection.ontrack = (event) => {
+          event.streams[0].getTracks().forEach(track => {
+            this._remoteStream.addTrack(track);
+          });
+        };
+
+        // ICE candidates
+        this._peerConnection.onicecandidate = (event) => {
+          if (event.candidate && this._ws && this._ws.readyState === WebSocket.OPEN) {
+            this._ws.send(JSON.stringify({
+              type: "video_ice_candidate",
+              payload: {
+                candidate: event.candidate.candidate,
+                sdp_mid: event.candidate.sdpMid,
+                sdp_m_line_index: event.candidate.sdpMLineIndex,
+              },
+            }));
+          }
+        };
+
+        this._peerConnection.oniceconnectionstatechange = () => {
+          const state = this._peerConnection.iceConnectionState;
+          if (state === "disconnected" || state === "failed" || state === "closed") {
+            this._endVideoCall(true);
+          }
+        };
+
+        // If we're the offerer, create and send offer
+        if (isOfferer) {
+          const offer = await this._peerConnection.createOffer();
+          await this._peerConnection.setLocalDescription(offer);
+          this._ws.send(JSON.stringify({
+            type: "video_offer",
+            payload: {
+              sdp: offer.sdp,
+              sdp_type: offer.type,
+            },
+          }));
+        }
+      } catch (err) {
+        console.error("[CentionChat] WebRTC error:", err);
+        this._appendSystem("Could not start video: " + (err.message || "permission denied"));
+        this._endVideoCall(true);
+      }
+    },
+
+    async _handleVideoOffer(payload) {
+      // We received an SDP offer — set remote, create answer
+      if (!this._peerConnection) {
+        await this._startWebRTC(false);
+      }
+
+      try {
+        await this._peerConnection.setRemoteDescription(
+          new RTCSessionDescription({ type: payload.sdp_type || "offer", sdp: payload.sdp })
+        );
+
+        const answer = await this._peerConnection.createAnswer();
+        await this._peerConnection.setLocalDescription(answer);
+
+        this._ws.send(JSON.stringify({
+          type: "video_answer",
+          payload: {
+            sdp: answer.sdp,
+            sdp_type: answer.type,
+          },
+        }));
+      } catch (err) {
+        console.error("[CentionChat] Failed to handle video offer:", err);
+      }
+    },
+
+    async _handleVideoAnswer(payload) {
+      if (!this._peerConnection) return;
+      try {
+        await this._peerConnection.setRemoteDescription(
+          new RTCSessionDescription({ type: payload.sdp_type || "answer", sdp: payload.sdp })
+        );
+      } catch (err) {
+        console.error("[CentionChat] Failed to handle video answer:", err);
+      }
+    },
+
+    async _handleRemoteIceCandidate(payload) {
+      if (!this._peerConnection) return;
+      try {
+        await this._peerConnection.addIceCandidate(new RTCIceCandidate({
+          candidate: payload.candidate,
+          sdpMid: payload.sdp_mid,
+          sdpMLineIndex: payload.sdp_m_line_index,
+        }));
+      } catch (err) {
+        console.error("[CentionChat] Failed to add ICE candidate:", err);
+      }
+    },
+
+    _toggleMute() {
+      if (!this._localStream) return;
+      const audioTrack = this._localStream.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        this._elements["video-mute"].classList.toggle("cc-video__btn--muted", !audioTrack.enabled);
+        this._elements["video-mute"].title = audioTrack.enabled ? "Mute" : "Unmute";
+      }
+    },
+
+    _toggleCamera() {
+      if (!this._localStream) return;
+      const videoTrack = this._localStream.getVideoTracks()[0];
+      if (videoTrack) {
+        videoTrack.enabled = !videoTrack.enabled;
+        this._elements["video-camera"].classList.toggle("cc-video__btn--off", !videoTrack.enabled);
+        this._elements["video-camera"].title = videoTrack.enabled ? "Turn off camera" : "Turn on camera";
+      }
+    },
+
+    _endVideoCall(silent) {
+      // Stop local media
+      if (this._localStream) {
+        this._localStream.getTracks().forEach(t => t.stop());
+        this._localStream = null;
+      }
+
+      // Close peer connection
+      if (this._peerConnection) {
+        this._peerConnection.close();
+        this._peerConnection = null;
+      }
+
+      this._remoteStream = null;
+      this._videoState = "idle";
+      this._hideVideoUI();
+
+      // Tell server
+      if (!silent && this._ws && this._ws.readyState === WebSocket.OPEN) {
+        this._ws.send(JSON.stringify({ type: "video_end", payload: {} }));
+      }
+    },
+
+    _hideVideoUI() {
+      this._elements["video-container"].style.display = "none";
+      this._elements["video-incoming"].style.display = "none";
+      this._elements["video-controls"].style.display = "none";
+      this._elements["video-btn"].classList.remove("cc-header__video-btn--active");
+
+      const localVid = this._elements["local-video"];
+      const remoteVid = this._elements["remote-video"];
+      if (localVid) localVid.srcObject = null;
+      if (remoteVid) remoteVid.srcObject = null;
+    },
+
+    _esc(str) {
+      const d = document.createElement("div");
+      d.textContent = str;
+      return d.innerHTML;
+    },
+  };
+
+  // Auto-init if script has data-widget-id
+  if (document.currentScript && document.currentScript.dataset.widgetId) {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", () => CentionChat.init());
+    } else {
+      CentionChat.init();
+    }
+  }
+
+  window.CentionChat = CentionChat;
+})();
+
 </script>
+<script>
+  CentionChat.init({
+    widgetId: "01KY78N19ZHSTVC23D30BH7HF8",
+    server: "wss://v2-api.cention.com/channel-adapter-chat",
+    apiBase: "https://v2-api.cention.com/channel-adapter-chat",
+  });
+</script>
+</body>
+</html>
